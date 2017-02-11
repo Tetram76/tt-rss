@@ -13,6 +13,10 @@ var _counters_prev = [];
 	return false;
 }*/
 
+function resetCounterCache() {
+	_counters_prev = [];
+}
+
 function loadMoreHeadlines() {
 	try {
 		console.log("loadMoreHeadlines");
@@ -307,7 +311,7 @@ function parse_counters(elems) {
 			}
 
 			if (id == "subscribed-feeds") {
-				feeds_found = ctr;
+				/* feeds_found = ctr; */
 				continue;
 			}
 

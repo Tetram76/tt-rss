@@ -212,15 +212,15 @@ function notify_real(msg, no_hide, n_type) {
 	msg = "<span class=\"msg\"> " + __(msg) + "</span>";
 
 	if (n_type == 2) {
-		msg = "<span><img src='images/indicator_white.gif'></span>" + msg;
+		msg = "<span><img src=\""+getInitParam("icon_indicator_white")+"\"></span>" + msg;
 		no_hide = true;
 	} else if (n_type == 3) {
-		msg = "<span><img src='images/alert.png'></span>" + msg;
+		msg = "<span><img src=\""+getInitParam("icon_alert")+"\"></span>" + msg;
 	} else if (n_type == 4) {
-		msg = "<span><img src='images/information.png'></span>" + msg;
+		msg = "<span><img src=\""+getInitParam("icon_information")+"\"></span>" + msg;
 	}
 
-	msg += " <span><img src=\"images/cross.png\" class=\"close\" title=\"" +
+	msg += " <span><img src=\""+getInitParam("icon_cross")+"\" class=\"close\" title=\"" +
 		__("Click to close") + "\" onclick=\"notify('')\"></span>";
 
 	n.innerHTML = msg;
@@ -2064,9 +2064,17 @@ function getSelectionText() {
 	return text.stripTags();
 }
 
+function openUrlPopup(url) {
+	var w = window.open("");
+
+	w.opener = null;
+	w.location = url;
+}
 function openArticlePopup(id) {
-	window.open("backend.php?op=article&method=view&mode=raw&html=1&zoom=1&id=" + id +
-		"&csrf_token=" + getInitParam("csrf_token"),
+	var w = window.open("",
 		"ttrss_article_popup",
 		"height=900,width=900,resizable=yes,status=no,location=no,menubar=no,directories=no,scrollbars=yes,toolbar=no");
+
+	w.opener = null;
+	w.location = "backend.php?op=article&method=view&mode=raw&html=1&zoom=1&id=" + id + "&csrf_token=" + getInitParam("csrf_token");
 }

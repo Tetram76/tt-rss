@@ -44,6 +44,11 @@
 
 		$params['simple_update'] = defined('SIMPLE_UPDATE_MODE') && SIMPLE_UPDATE_MODE;
 
+		$params["icon_alert"] = base64_img("images/alert.png");
+		$params["icon_information"] = base64_img("images/information.png");
+		$params["icon_cross"] = base64_img("images/cross.png");
+		$params["icon_indicator_white"] = base64_img("images/indicator_white.gif");
+
 		return $params;
 	}
 
@@ -888,28 +893,47 @@
 		$doc->loadHTML($charset_hack . $res);
 		$xpath = new DOMXPath($doc);
 
-		$entries = $xpath->query('(//a[@href]|//img[@src])');
-
 		$ttrss_uses_https = parse_url(get_self_url_prefix(), PHP_URL_SCHEME) === 'https';
+		$rewrite_base_url = $site_url ? $site_url : SELF_URL_PATH;
+
+		$entries = $xpath->query('(//a[@href]|//img[@src]|//video/source[@src])');
 
 		foreach ($entries as $entry) {
 
-			if ($site_url) {
+			if ($entry->hasAttribute('href')) {
+				$entry->setAttribute('href',
+					rewrite_relative_url($rewrite_base_url, $entry->getAttribute('href')));
 
-				if ($entry->hasAttribute('href')) {
-					$entry->setAttribute('href',
-						rewrite_relative_url($site_url, $entry->getAttribute('href')));
+				$entry->setAttribute('rel', 'noopener noreferrer');
+			}
 
-					$entry->setAttribute('rel', 'noopener noreferrer');
+			if ($entry->hasAttribute('src')) {
+				$src = rewrite_relative_url($rewrite_base_url, $entry->getAttribute('src'));
+
+				$extension = $entry->tagName == 'source' ? '.mp4' : '.png';
+				$cached_filename = CACHE_DIR . '/images/' . sha1($src) . $extension;
+
+				if (file_exists($cached_filename)) {
+					$src = get_self_url_prefix() . '/public.php?op=cached_image&hash=' . sha1($src) . $extension;
+
+					if ($entry->hasAttribute('srcset')) {
+						$entry->removeAttribute('srcset');
+					}
+
+					if ($entry->hasAttribute('sizes')) {
+						$entry->removeAttribute('sizes');
+					}
 				}
 
+				$entry->setAttribute('src', $src);
+			}
+
+			if ($entry->nodeName == 'img') {
+
 				if ($entry->hasAttribute('src')) {
-					$src = rewrite_relative_url($site_url, $entry->getAttribute('src'));
+					$is_https_url = parse_url($entry->getAttribute('src'), PHP_URL_SCHEME) === 'https';
 
-					$cached_filename = CACHE_DIR . '/images/' . sha1($src) . '.png';
-
-					if (file_exists($cached_filename)) {
-						$src = SELF_URL_PATH . '/public.php?op=cached_image&hash=' . sha1($src);
+					if ($ttrss_uses_https && !$is_https_url) {
 
 						if ($entry->hasAttribute('srcset')) {
 							$entry->removeAttribute('srcset');
@@ -919,41 +943,22 @@
 							$entry->removeAttribute('sizes');
 						}
 					}
-
-					$entry->setAttribute('src', $src);
 				}
 
-				if ($entry->nodeName == 'img') {
-					if ($entry->hasAttribute('src')) {
-						$is_https_url = parse_url($entry->getAttribute('src'), PHP_URL_SCHEME) === 'https';
+				if (($owner && get_pref("STRIP_IMAGES", $owner)) ||
+						$force_remove_images || $_SESSION["bw_limit"]) {
 
-						if ($ttrss_uses_https && !$is_https_url) {
+					$p = $doc->createElement('p');
 
-							if ($entry->hasAttribute('srcset')) {
-								$entry->removeAttribute('srcset');
-							}
+					$a = $doc->createElement('a');
+					$a->setAttribute('href', $entry->getAttribute('src'));
 
-							if ($entry->hasAttribute('sizes')) {
-								$entry->removeAttribute('sizes');
-							}
-						}
-					}
+					$a->appendChild(new DOMText($entry->getAttribute('src')));
+					$a->setAttribute('target', '_blank');
 
-					if (($owner && get_pref("STRIP_IMAGES", $owner)) ||
-							$force_remove_images || $_SESSION["bw_limit"]) {
+					$p->appendChild($a);
 
-						$p = $doc->createElement('p');
-
-						$a = $doc->createElement('a');
-						$a->setAttribute('href', $entry->getAttribute('src'));
-
-						$a->appendChild(new DOMText($entry->getAttribute('src')));
-						$a->setAttribute('target', '_blank');
-
-						$p->appendChild($a);
-
-						$entry->parentNode->replaceChild($p, $entry);
-					}
+					$entry->parentNode->replaceChild($p, $entry);
 				}
 			}
 
@@ -1955,7 +1960,7 @@
 #				$entry .= " <a target=\"_blank\" href=\"" . htmlspecialchars($url) . "\">" .
 #					$filename . " (" . $ctype . ")" . "</a>";
 
-				$entry = "<div onclick=\"window.open('".htmlspecialchars($url)."')\"
+				$entry = "<div onclick=\"openUrlPopup('".htmlspecialchars($url)."')\"
 					dojoType=\"dijit.MenuItem\">$filename ($ctype)</div>";
 
 				array_push($entries_html, $entry);
@@ -2036,7 +2041,7 @@
 				else
 					$filename = "";
 
-				$rv .= "<div onclick='window.open(\"".htmlspecialchars($entry["url"])."\")'
+				$rv .= "<div onclick='openUrlPopup(\"".htmlspecialchars($entry["url"])."\")'
 					dojoType=\"dijit.MenuItem\">".$filename . $title."</div>";
 
 			};
@@ -2482,5 +2487,15 @@
 		);
 
 		return $errors[$code];
+	}
+
+	function base64_img($filename) {
+		if (file_exists($filename)) {
+			 $ext = pathinfo($filename, PATHINFO_EXTENSION);
+
+			return "data:image/$ext;base64," . base64_encode(file_get_contents($filename));
+		} else {
+			return "";
+		}
 	}
 ?>
