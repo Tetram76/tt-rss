@@ -301,7 +301,7 @@ function getURLParam(param){
 }
 
 function closeInfoBox() {
-	dialog = dijit.byId("infoBox");
+	var dialog = dijit.byId("infoBox");
 
 	if (dialog)	dialog.hide();
 
@@ -646,7 +646,7 @@ function quickAddFeed() {
 								dialog.show_error(__("Specified URL doesn't seem to contain any feeds."));
 								break;
 							case 4:
-								feeds = rc['feeds'];
+								var feeds = rc['feeds'];
 
 								Element.show("fadd_multiple_notify");
 
@@ -939,7 +939,7 @@ function quickAddFilter() {
 	if (dijit.byId("filterEditDlg"))
 		dijit.byId("filterEditDlg").destroyRecursive();
 
-	dialog = new dijit.Dialog({
+	var dialog = new dijit.Dialog({
 		id: "filterEditDlg",
 		title: __("Create Filter"),
 		style: "width: 600px",
@@ -981,10 +981,10 @@ function quickAddFilter() {
 		addAction: function() { addFilterAction(); },
 		addRule: function() { addFilterRule(); },
 		deleteAction: function() {
-			$$("#filterDlg_Actions li.[class*=Selected]").each(function(e) { e.parentNode.removeChild(e) });
+			$$("#filterDlg_Actions li[class*=Selected]").each(function(e) { e.parentNode.removeChild(e) });
 		},
 		deleteRule: function() {
-			$$("#filterDlg_Matches li.[class*=Selected]").each(function(e) { e.parentNode.removeChild(e) });
+			$$("#filterDlg_Matches li[class*=Selected]").each(function(e) { e.parentNode.removeChild(e) });
 		},
 		execute: function() {
 			if (this.validate()) {
@@ -1032,7 +1032,7 @@ function quickAddFilter() {
 
 					var title = false;
 
-					if (reply && reply) title = reply.title;
+					if (reply && reply.title) title = reply.title;
 
 					if (title || getActiveFeedId() || activeFeedIsCat()) {
 
@@ -1117,7 +1117,7 @@ function backend_sanity_check_callback(transport) {
 	if (params) {
 		console.log('reading init-params...');
 
-		for (k in params) {
+		for (var k in params) {
 			console.log("IP: " + k + " => " + JSON.stringify(params[k]));
 			if (k == "label_base_index") _label_base_index = parseInt(params[k]);
 		}
@@ -1257,7 +1257,7 @@ function editFeed(feed) {
 	if (dijit.byId("feedEditDlg"))
 		dijit.byId("feedEditDlg").destroyRecursive();
 
-	dialog = new dijit.Dialog({
+	var dialog = new dijit.Dialog({
 		id: "feedEditDlg",
 		title: __("Edit Feed"),
 		style: "width: 600px",
@@ -1432,7 +1432,7 @@ function showFeedsWithErrors() {
 	if (dijit.byId("errorFeedsDlg"))
 		dijit.byId("errorFeedsDlg").destroyRecursive();
 
-	dialog = new dijit.Dialog({
+	var dialog = new dijit.Dialog({
 		id: "errorFeedsDlg",
 		title: __("Feeds with update errors"),
 		style: "width: 600px",
@@ -1486,7 +1486,7 @@ function helpDialog(topic) {
 	if (dijit.byId("helpDlg"))
 		dijit.byId("helpDlg").destroyRecursive();
 
-	dialog = new dijit.Dialog({
+	var dialog = new dijit.Dialog({
 		id: "helpDlg",
 		title: __("Help"),
 		style: "width: 600px",

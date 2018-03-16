@@ -11,6 +11,7 @@
 	$fetch_last_error_code = false;
 	$fetch_last_content_type = false;
 	$fetch_last_error_content = false; // curl only for the time being
+	$fetch_effective_url = false;
 	$fetch_curl_used = false;
 	$suppress_debugging = false;
 
@@ -325,6 +326,7 @@
 		global $fetch_last_error_content;
 		global $fetch_last_content_type;
 		global $fetch_last_modified;
+		global $fetch_effective_url;
 		global $fetch_curl_used;
 
 		$fetch_last_error = false;
@@ -333,6 +335,7 @@
 		$fetch_last_content_type = "";
 		$fetch_curl_used = false;
 		$fetch_last_modified = "";
+		$fetch_effective_url = "";
 
 		if (!is_array($options)) {
 
@@ -444,6 +447,8 @@
 			$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 			$fetch_last_content_type = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
 
+			$fetch_effective_url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+
 			$fetch_last_error_code = $http_code;
 
 			if ($http_code != 200 || $type && strpos($fetch_last_content_type, "$type") === false) {
@@ -486,6 +491,9 @@
 
 			 $context_options = array(
 				  'http' => array(
+						'header' => array(
+							'Connection: close'
+						),
 						'method' => 'GET',
 						'ignore_errors' => true,
 						'timeout' => $timeout ? $timeout : FILE_FETCH_TIMEOUT,
@@ -493,7 +501,7 @@
 				  );
 
 			if (!$post_query && $last_modified) {
-				$context_options['http']['header'] = "If-Modified-Since: $last_modified\r\n";
+				array_push($context_options['http']['header'], "If-Modified-Since: $last_modified");
 			}
 
 			if (defined('_HTTP_PROXY')) {
@@ -504,6 +512,8 @@
 			$context = stream_context_create($context_options);
 
 			$old_error = error_get_last();
+
+			$fetch_effective_url = $url;
 
 			$data = @file_get_contents($url, false, $context);
 
@@ -520,6 +530,8 @@
 							// e.g. if we were being redirected -- last one is the right one
 						} else if ($key == 'last-modified') {
 							$fetch_last_modified = $value;
+						} else if ($key == 'location') {
+							$fetch_effective_url = $value;
 						}
 					}
 
@@ -1588,6 +1600,9 @@
 			if ($entry->nodeName == 'img') {
 				$entry->setAttribute('referrerpolicy', 'no-referrer');
 
+				$entry->removeAttribute('width');
+				$entry->removeAttribute('height');
+
 				if ($entry->hasAttribute('src')) {
 					$is_https_url = parse_url($entry->getAttribute('src'), PHP_URL_SCHEME) === 'https';
 
@@ -1640,7 +1655,7 @@
 			}
 		}
 
-		$allowed_elements = array('a', 'address', 'acronym', 'audio', 'article', 'aside',
+		$allowed_elements = array('a', 'abbr', 'address', 'acronym', 'audio', 'article', 'aside',
 			'b', 'bdi', 'bdo', 'big', 'blockquote', 'body', 'br',
 			'caption', 'cite', 'center', 'code', 'col', 'colgroup',
 			'data', 'dd', 'del', 'details', 'description', 'dfn', 'div', 'dl', 'font',
@@ -1754,11 +1769,8 @@
 	}
 
 	function tag_is_valid($tag) {
-		if ($tag == '') return false;
-		if (is_numeric($tag)) return false;
-		if (mb_strlen($tag) > 250) return false;
-
-		if (!$tag) return false;
+		if (!$tag || is_numeric($tag) || mb_strlen($tag) > 250)
+			return false;
 
 		return true;
 	}
