@@ -11,7 +11,7 @@ class API extends Handler {
 	static function param_to_bool($p) {
 		return $p && ($p !== "f" && $p !== "false");
 	}
-	
+
 	function before($method) {
 		if (parent::before($method)) {
 			header("Content-Type: text/json");
@@ -186,7 +186,7 @@ class API extends Handler {
 
 	function getHeadlines() {
 		$feed_id = clean($_REQUEST["feed_id"]);
-		if ($feed_id != "") {
+		if ($feed_id !== "") {
 
 			if (is_numeric($feed_id)) $feed_id = (int) $feed_id;
 
@@ -293,8 +293,8 @@ class API extends Handler {
 
 			$article_qmarks = arr_qmarks($article_ids);
 
-			$sth = $this->pdo->prepare("UPDATE ttrss_user_entries SET 
-				$field = $set_to $additional_fields 
+			$sth = $this->pdo->prepare("UPDATE ttrss_user_entries SET
+				$field = $set_to $additional_fields
 				WHERE ref_id IN ($article_qmarks) AND owner_uid = ?");
 			$sth->execute(array_merge($article_ids, [$_SESSION['uid']]));
 
@@ -378,6 +378,8 @@ class API extends Handler {
 				foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_RENDER_ARTICLE_API) as $p) {
 					$article = $p->hook_render_article_api(array("article" => $article));
 				}
+
+				$article['content'] = DiskCache::rewriteUrls($article['content']);
 
 				array_push($articles, $article);
 
@@ -533,6 +535,7 @@ class API extends Handler {
 
 			/* Labels */
 
+			/* API only: -4 All feeds, including virtual feeds */
 			if ($cat_id == -4 || $cat_id == -2) {
 				$counters = Counters::getLabelCounters(true);
 
@@ -580,7 +583,7 @@ class API extends Handler {
 			if ($include_nested && $cat_id) {
 				$sth = $pdo->prepare("SELECT
 					id, title, order_id FROM ttrss_feed_categories
-					WHERE parent_cat = ? AND owner_uid = ? ORDER BY id, title");
+					WHERE parent_cat = ? AND owner_uid = ? ORDER BY order_id, title");
 
 				$sth->execute([$cat_id, $_SESSION['uid']]);
 
@@ -609,12 +612,13 @@ class API extends Handler {
 				$limit_qpart = "";
 			}
 
+			/* API only: -3 All feeds, excluding virtual feeds (e.g. Labels and such) */
 			if ($cat_id == -4 || $cat_id == -3) {
 				$sth = $pdo->prepare("SELECT
 					id, feed_url, cat_id, title, order_id, ".
 						SUBSTRING_FOR_DATE."(last_updated,1,19) AS last_updated
 						FROM ttrss_feeds WHERE owner_uid = ?
-						ORDER BY cat_id, title " . $limit_qpart);
+						ORDER BY order_id, title " . $limit_qpart);
 				$sth->execute([$_SESSION['uid']]);
 
 			} else {
@@ -623,9 +627,9 @@ class API extends Handler {
 					id, feed_url, cat_id, title, order_id, ".
 						SUBSTRING_FOR_DATE."(last_updated,1,19) AS last_updated
 						FROM ttrss_feeds WHERE
-						(cat_id = :cat OR (:cat = 0 AND cat_id IS NULL)) 
+						(cat_id = :cat OR (:cat = 0 AND cat_id IS NULL))
 						AND owner_uid = :uid
-						ORDER BY cat_id, title " . $limit_qpart);
+						ORDER BY order_id, title " . $limit_qpart);
 				$sth->execute([":uid" => $_SESSION['uid'], ":cat" => $cat_id]);
 			}
 
@@ -753,13 +757,14 @@ class API extends Handler {
 						"is_updated" => $is_updated,
 						"title" => $line["title"],
 						"link" => $line["link"],
-						"feed_id" => $line["feed_id"],
+						"feed_id" => $line["feed_id"] ? $line['feed_id'] : 0,
 						"tags" => $tags,
 					);
 
+					$enclosures = Article::get_article_enclosures($line['id']);
+
 					if ($include_attachments)
-						$headline_row['attachments'] = Article::get_article_enclosures(
-							$line['id']);
+						$headline_row['attachments'] = $enclosures;
 
 					if ($show_excerpt)
 						$headline_row["excerpt"] = $line["content_preview"];
@@ -798,6 +803,13 @@ class API extends Handler {
 					foreach (PluginHost::getInstance()->get_hooks(PluginHost::HOOK_RENDER_ARTICLE_API) as $p) {
 						$headline_row = $p->hook_render_article_api(array("headline" => $headline_row));
 					}
+
+					$headline_row["content"] = DiskCache::rewriteUrls($headline_row['content']);
+
+					list ($flavor_image, $flavor_stream) = Article::get_article_image($enclosures, $line["content"], $line["site_url"]);
+
+					$headline_row["flavor_image"] = $flavor_image;
+					$headline_row["flavor_stream"] = $flavor_stream;
 
 					array_push($headlines, $headline_row);
 				}

@@ -10,7 +10,6 @@ class PluginHost {
 	private $api_methods = array();
 	private $plugin_actions = array();
 	private $owner_uid;
-	private $debug;
 	private $last_registered;
 	private static $instance;
 
@@ -53,14 +52,22 @@ class PluginHost {
 	const HOOK_MAIN_TOOLBAR_BUTTON = 32;
 	const HOOK_ENCLOSURE_ENTRY = 33;
 	const HOOK_FORMAT_ARTICLE = 34;
-	const HOOK_FORMAT_ARTICLE_CDM = 35;
+	const HOOK_FORMAT_ARTICLE_CDM = 35; /* RIP */
 	const HOOK_FEED_BASIC_INFO = 36;
 	const HOOK_SEND_LOCAL_FILE = 37;
 	const HOOK_UNSUBSCRIBE_FEED = 38;
+	const HOOK_SEND_MAIL = 39;
+	const HOOK_FILTER_TRIGGERED = 40;
+	const HOOK_GET_FULL_TEXT = 41;
+	const HOOK_ARTICLE_IMAGE = 42;
 
 	const KIND_ALL = 1;
 	const KIND_SYSTEM = 2;
 	const KIND_USER = 3;
+
+	static function object_to_domain($plugin) {
+		return strtolower(get_class($plugin));
+	}
 
 	function __construct() {
 		$this->pdo = Db::pdo();
@@ -96,7 +103,7 @@ class PluginHost {
 	function get_pdo() {
 		return $this->pdo;
 	}
-	
+
 	function get_plugin_names() {
 		$names = array();
 
@@ -121,28 +128,44 @@ class PluginHost {
 		}
 	}
 
-	function add_hook($type, $sender) {
+	function add_hook($type, $sender, $priority = 50) {
+		$priority = (int) $priority;
+
 		if (!is_array($this->hooks[$type])) {
-			$this->hooks[$type] = array();
+			$this->hooks[$type] = [];
 		}
 
-		array_push($this->hooks[$type], $sender);
+		if (!is_array($this->hooks[$type][$priority])) {
+			$this->hooks[$type][$priority] = [];
+		}
+
+		array_push($this->hooks[$type][$priority], $sender);
+		ksort($this->hooks[$type]);
 	}
 
 	function del_hook($type, $sender) {
 		if (is_array($this->hooks[$type])) {
-			$key = array_Search($sender, $this->hooks[$type]);
-			if ($key !== FALSE) {
-				unset($this->hooks[$type][$key]);
+			foreach (array_keys($this->hooks[$type]) as $prio) {
+				$key = array_search($sender, $this->hooks[$type][$prio]);
+
+				if ($key !== FALSE) {
+					unset($this->hooks[$type][$prio][$key]);
+				}
 			}
 		}
 	}
 
 	function get_hooks($type) {
 		if (isset($this->hooks[$type])) {
-			return $this->hooks[$type];
+			$tmp = [];
+
+			foreach (array_keys($this->hooks[$type]) as $prio) {
+				$tmp = array_merge($tmp, $this->hooks[$type][$prio]);
+			}
+
+			return $tmp;
 		} else {
-			return array();
+			return [];
 		}
 	}
 	function load_all($kind, $owner_uid = false, $skip_init = false) {
@@ -163,22 +186,44 @@ class PluginHost {
 
 		foreach ($plugins as $class) {
 			$class = trim($class);
-			$class_file = strtolower(basename($class));
+			$class_file = strtolower(clean_filename($class));
 
 			if (!is_dir(__DIR__."/../plugins/$class_file") &&
 					!is_dir(__DIR__."/../plugins.local/$class_file")) continue;
 
 			// try system plugin directory first
 			$file = __DIR__ . "/../plugins/$class_file/init.php";
+			$vendor_dir = __DIR__ . "/../plugins/$class_file/vendor";
 
 			if (!file_exists($file)) {
 				$file = __DIR__ . "/../plugins.local/$class_file/init.php";
+				$vendor_dir = __DIR__ . "/../plugins.local/$class_file/vendor";
 			}
 
 			if (!isset($this->plugins[$class])) {
 				if (file_exists($file)) require_once $file;
 
 				if (class_exists($class) && is_subclass_of($class, "Plugin")) {
+
+					// register plugin autoloader if necessary, for namespaced classes ONLY
+					// layout corresponds to tt-rss main /vendor/author/Package/Class.php
+
+					if (file_exists($vendor_dir)) {
+						spl_autoload_register(function($class) use ($vendor_dir) {
+
+							if (strpos($class, '\\') !== FALSE) {
+								list ($namespace, $class_name) = explode('\\', $class, 2);
+
+								if ($namespace && $class_name) {
+									$class_file = "$vendor_dir/$namespace/" . str_replace('\\', '/', $class_name) . ".php";
+
+									if (file_exists($class_file))
+										require_once $class_file;
+								}
+							}
+						});
+					}
+
 					$plugin = new $class($this);
 
 					$plugin_api = $plugin->api_version();
@@ -186,6 +231,11 @@ class PluginHost {
 					if ($plugin_api < PluginHost::API_VERSION) {
 						user_error("Plugin $class is not compatible with current API version (need: " . PluginHost::API_VERSION . ", got: $plugin_api)", E_USER_WARNING);
 						continue;
+					}
+
+					if (file_exists(dirname($file) . "/locale")) {
+						_bindtextdomain($class, dirname($file) . "/locale");
+						_bind_textdomain_codeset($class, "UTF-8");
 					}
 
 					$this->last_registered = $class;
@@ -377,14 +427,6 @@ class PluginHost {
 		}
 	}
 
-	function set_debug($debug) {
-		$this->debug = $debug;
-	}
-
-	function get_debug() {
-		return $this->debug;
-	}
-
 	// Plugin feed functions are *EXPERIMENTAL*!
 
 	// cat_id: only -1 is supported (Special)
@@ -444,5 +486,39 @@ class PluginHost {
 
 	function get_filter_actions() {
 		return $this->plugin_actions;
+	}
+
+	function get_owner_uid() {
+		return $this->owner_uid;
+	}
+
+	// handled by classes/pluginhandler.php, requires valid session
+	function get_method_url($sender, $method, $params)  {
+		return get_self_url_prefix() . "/backend.php?" .
+			http_build_query(
+				array_merge(
+					[
+						"op" => "pluginhandler",
+						"plugin" => strtolower(get_class($sender)),
+						"method" => $method
+					],
+					$params));
+	}
+
+	// WARNING: endpoint in public.php, exposed to unauthenticated users
+	function get_public_method_url($sender, $method, $params)  {
+		if ($sender->is_public_method($method)) {
+			return get_self_url_prefix() . "/public.php?" .
+				http_build_query(
+					array_merge(
+						[
+							"op" => "pluginhandler",
+							"plugin" => strtolower(get_class($sender)),
+							"pmethod" => $method
+						],
+						$params));
+		} else {
+			user_error("get_public_method_url: requested method '$method' of '" . get_class($sender) . "' is private.");
+		}
 	}
 }
